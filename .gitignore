@@ -1,0 +1,24 @@
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+
+# Virtual environment
+.venv/
+env/
+venv/
+ENV/
+
+# Jupyter Notebook checkpoints
+.ipynb_checkpoints/
+*/.ipynb_checkpoints/
+
+# Local data & reports (generated during development/CLI)
+*.xlsx
+mock_*.csv
+dados_teste.csv
+
+# OS metadata
+.DS_Store
+Thumbs.db
