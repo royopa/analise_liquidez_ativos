@@ -20,6 +20,26 @@ DEBENTURES_SCHEMA: Dict[str, Any] = {
     'int_cols': ['quantidade', 'numero_de_negocios']
 }
 
+ACOES_SCHEMA: Dict[str, Any] = {
+    'type': 'acoes',
+    'date_col': 'data_referencia',
+    'isin_col': 'isin',
+    'ativo_col': 'codigo_ativo',
+    'quantity_col': 'fin_instrm_qty',
+    'trades_col': 'trad_qty',
+    'price_col': 'preco_medio',
+    'volume_col': 'ntl_fin_vol',
+    'price_cols': [
+        'preco_abertura',
+        'preco_minimo',
+        'preco_maximo',
+        'preco_medio',
+        'preco_ultimo'
+    ],
+    'date_cols': ['data_referencia'],
+    'int_cols': ['trad_qty', 'fin_instrm_qty']
+}
+
 TITULOS_PUBLICOS_SCHEMA: Dict[str, Any] = {
     'type': 'titulos_publicos',
     'date_col': 'data_mov',

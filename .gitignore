@@ -18,6 +18,7 @@ ENV/
 *.xlsx
 mock_*.csv
 dados_teste.csv
+data/
 
 # OS metadata
 .DS_Store
