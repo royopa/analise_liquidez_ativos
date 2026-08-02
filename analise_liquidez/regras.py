@@ -6,6 +6,8 @@ from typing import List, Dict, Any
 import numpy as np
 import pandas as pd
 
+from analise_liquidez.dados_acoes import obter_prazo_liquidacao
+
 
 def expandir_dias_uteis(
     df: pd.DataFrame,
@@ -136,28 +138,28 @@ def calcular_liquidez_carteira(
 ) -> pd.DataFrame:
     """Calcula e retorna a liquidez para a carteira do fundo.
 
-    Args:
-        parametros: Dicionário contendo os parâmetros de carteira e prazos.
-        df_dados_liquidez: DataFrame com médias móveis e volumes calculados.
-        schema: Configurações de colunas do ativo.
-
-    Returns:
-        DataFrame com o resultado consolidado da liquidez por título.
+    Se o prazo de liquidação do ativo for maior que o prazo de cotização,
+    a liquidez é zerada porque o ativo não consegue ser convertido a tempo.
     """
     date_col = schema['date_col']
     isin_col = schema['isin_col']
     price_col = schema['price_col']
 
-    # Verifica se a chave é de debêntures ou de títulos públicos
     carteira = (
         parametros.get("carteira_de_titulos_publicos") or
-        parametros.get("carteira_de_debentures")
+        parametros.get("carteira_de_debentures") or
+        parametros.get("carteira_de_acoes")
     )
     if not carteira:
         raise ValueError("Nenhuma carteira de ativos encontrada nos parâmetros.")
 
     data_referencia_global = pd.Timestamp(parametros["data_referencia"])
     prazo_de_cotizacao_fundo = parametros["prazo_de_cotizacao"]
+    tipo_ativo = parametros.get("tipo_ativo", schema.get("type", ""))
+    prazo_liquidacao_ativo_default = parametros.get(
+        "prazo_liquidacao_ativo",
+        obter_prazo_liquidacao(tipo_ativo, valor_padrao=2)
+    )
 
     multiplicador = (
         1 if prazo_de_cotizacao_fundo <= 1
@@ -178,7 +180,6 @@ def calcular_liquidez_carteira(
 
         isin, codigo_ativo, quantidade_fundo = titulo_info
 
-        # Filtrar dados de liquidez para o ISIN e data
         dados_liquidez_ativo = df_dados_liquidez[
             (df_dados_liquidez[isin_col] == isin) &
             (df_dados_liquidez[date_col] == data_referencia_global)
@@ -213,14 +214,24 @@ def calcular_liquidez_carteira(
         )
         pu_med = dados_liquidez_ativo[price_col].iloc[0]
 
+        prazo_liquidacao_ativo = dados_liquidez_ativo.get(
+            'prazo_liquidacao_ativo',
+            pd.Series([prazo_liquidacao_ativo_default])
+        ).iloc[0]
+
         valor_total_alocado = pu_med * quantidade_fundo
-        valor_total_prazo_cotizacao_calculado = (
-            volume_liquido_1dia_calculado * multiplicador
-        )
-        valor_total_liquido_calculado = min(
-            valor_total_alocado,
-            valor_total_prazo_cotizacao_calculado
-        )
+
+        if prazo_liquidacao_ativo > prazo_de_cotizacao_fundo:
+            valor_total_prazo_cotizacao_calculado = 0.0
+            valor_total_liquido_calculado = 0.0
+        else:
+            valor_total_prazo_cotizacao_calculado = (
+                volume_liquido_1dia_calculado * multiplicador
+            )
+            valor_total_liquido_calculado = min(
+                valor_total_alocado,
+                valor_total_prazo_cotizacao_calculado
+            )
 
         if valor_total_alocado != 0 and not np.isnan(valor_total_alocado):
             percentual_liquido_alocado = (
@@ -238,10 +249,11 @@ def calcular_liquidez_carteira(
             'liquidez_media_21_dias': quantidade_media_21_dias_from_df,
             'volume_liquido_1dia_calculado': volume_liquido_1dia_calculado,
             'valor_total_alocado': valor_total_alocado,
-            'valor_total_prazo_cotizacao':
-                valor_total_prazo_cotizacao_calculado,
+            'valor_total_prazo_cotizacao': valor_total_prazo_cotizacao_calculado,
             'valor_total_liquido': valor_total_liquido_calculado,
-            'percentual_liquido_alocado': percentual_liquido_alocado
+            'percentual_liquido_alocado': percentual_liquido_alocado,
+            'prazo_liquidacao_ativo': prazo_liquidacao_ativo,
+            'prazo_cotizacao_fundo': prazo_de_cotizacao_fundo,
         })
         print(
             f"  Ativo: {codigo_ativo} (ISIN: {isin}) - Dados de "
