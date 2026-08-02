@@ -150,6 +150,7 @@ def calcular_liquidez_carteira(
 
     # Verifica se a chave é de debêntures ou de títulos públicos
     carteira = (
+        parametros.get("carteira_de_acoes") or
         parametros.get("carteira_de_titulos_publicos") or
         parametros.get("carteira_de_debentures")
     )
