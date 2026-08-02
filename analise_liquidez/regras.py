@@ -6,6 +6,73 @@ from typing import List, Dict, Any
 import numpy as np
 import pandas as pd
 
+# Exemplo de configuração de prazos de liquidação por classe de ativo.
+# Ações/FIIs/ETFs negociados na B3 costumam liquidar em D+2.
+PRAZOS_LIQUIDACAO_PADRAO_POR_CLASSE_ATIVO: Dict[str, int] = {
+    'acao': 2,
+    'acoes': 2,
+    'fii': 2,
+    'fiis': 2,
+    'etf': 2,
+    'etfs': 2
+}
+
+
+def _normalizar_classe_ativo(classe_ativo: Any) -> str:
+    """Normaliza o texto da classe de ativo para busca em configuração."""
+    if classe_ativo is None or pd.isna(classe_ativo):
+        return ''
+    return str(classe_ativo).strip().lower()
+
+
+def _obter_prazo_liquidacao_ativo(
+    dados_liquidez_ativo: pd.DataFrame,
+    schema: Dict[str, Any],
+    parametros: Dict[str, Any]
+) -> Any:
+    """Obtém o prazo de liquidação do ativo a partir de coluna/classe/default."""
+    prazo_liquidacao_col = schema.get('prazo_liquidacao_col')
+    classe_ativo_col = schema.get('classe_ativo_col')
+    prazos_por_classe = {
+        **PRAZOS_LIQUIDACAO_PADRAO_POR_CLASSE_ATIVO,
+        **schema.get('prazos_liquidacao_por_classe', {}),
+        **parametros.get('prazos_liquidacao_por_classe', {})
+    }
+
+    # Prioridade 1: coluna explícita com o prazo do ativo (ex.: D+2 => 2)
+    if (
+        prazo_liquidacao_col and
+        prazo_liquidacao_col in dados_liquidez_ativo.columns
+    ):
+        prazo_coluna = pd.to_numeric(
+            dados_liquidez_ativo[prazo_liquidacao_col].iloc[0],
+            errors='coerce'
+        )
+        if not pd.isna(prazo_coluna):
+            return int(prazo_coluna)
+
+    # Prioridade 2: classe do ativo + regra configurável de prazos
+    classe_ativo = None
+    if classe_ativo_col and classe_ativo_col in dados_liquidez_ativo.columns:
+        classe_ativo = dados_liquidez_ativo[classe_ativo_col].iloc[0]
+    if classe_ativo is None or pd.isna(classe_ativo):
+        classe_ativo = schema.get('type')
+    prazo_por_classe = prazos_por_classe.get(
+        _normalizar_classe_ativo(classe_ativo)
+    )
+    if prazo_por_classe is not None:
+        return prazo_por_classe
+
+    # Prioridade 3: default genérico informado em schema/parâmetros
+    prazo_default = (
+        parametros.get('prazo_liquidacao_default')
+        if 'prazo_liquidacao_default' in parametros
+        else schema.get('prazo_liquidacao_default')
+    )
+    if prazo_default is None:
+        return None
+    return int(prazo_default)
+
 
 def expandir_dias_uteis(
     df: pd.DataFrame,
@@ -212,6 +279,38 @@ def calcular_liquidez_carteira(
             dados_liquidez_ativo['volume_liquido_1dia_calculado'].iloc[0]
         )
         pu_med = dados_liquidez_ativo[price_col].iloc[0]
+
+        prazo_liquidacao_ativo = _obter_prazo_liquidacao_ativo(
+            dados_liquidez_ativo=dados_liquidez_ativo,
+            schema=schema,
+            parametros=parametros
+        )
+
+        # Regra temporal: se liquida após o prazo de cotização, zera liquidez.
+        if (
+            prazo_liquidacao_ativo is not None and
+            prazo_liquidacao_ativo > prazo_de_cotizacao_fundo
+        ):
+            valor_total_alocado = pu_med * quantidade_fundo
+            resultados_liquidez.append({
+                'isin': isin,
+                'codigo_ativo': codigo_ativo,
+                'quantidade_fundo': quantidade_fundo,
+                'data_referencia': data_referencia_global.strftime('%Y-%m-%d'),
+                price_col: pu_med,
+                'liquidez_media_21_dias': quantidade_media_21_dias_from_df,
+                'volume_liquido_1dia_calculado': volume_liquido_1dia_calculado,
+                'valor_total_alocado': valor_total_alocado,
+                'valor_total_prazo_cotizacao': 0.0,
+                'valor_total_liquido': 0.0,
+                'percentual_liquido_alocado': 0.0
+            })
+            print(
+                f"  Ativo: {codigo_ativo} (ISIN: {isin}) - liquidez zerada "
+                f"por prazo de liquidação ({prazo_liquidacao_ativo}) maior "
+                f"que o prazo de cotização ({prazo_de_cotizacao_fundo})."
+            )
+            continue
 
         valor_total_alocado = pu_med * quantidade_fundo
         valor_total_prazo_cotizacao_calculado = (
